@@ -1,0 +1,60 @@
+MIRA dataset desgin
+
+
+dirs structure:
+(all file name contains id)
+datasets  #for all projects
+    PRJ  #project name
+        images/:  #all background images
+            1234.png
+            ......
+        goal/:  #images to find
+            w7.png
+            w7_002.png
+            b8.png
+            1.png
+            ......
+        annotations:/
+            1234.json
+            ......
+        sets:/
+            train.txt
+            val.txt
+
+images.json
+{
+  id_n:
+  {
+    folder: x,
+    file_name: x,
+    width: x,
+    height: x
+  },
+  ......
+}
+
+annotations.json
+{
+  img_id_n:
+  {
+    cat_id_n: [{x, y, w, h}, ...]
+    ......
+  }
+  ......
+}
+
+cats.json
+{
+  id_n: {name: x, folder: x, file_name: x},
+  ......
+}
+
+
+# coco scheme
+train/val.json
+{
+  cats: [{id: x, name: x}, ...],
+  imgs: [{id: x, name: x, file_name: x, height: x, width: x}, ...],
+  annotations: [{id: x, cat_id: x, img_id: x, bbox: {}}, ...]
+}
+

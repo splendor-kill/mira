@@ -54,7 +54,7 @@ def bbs_to_dict(bbs, label):
     '''
     ss = 'xywh'
     d = edict({'name': label,
-               'bndbox': list(map(lambda x: dict(zip(ss, x)), bbs))})
+               'bbox': list(map(lambda x: dict(zip(ss, x)), bbs))})
     return d
 
 
@@ -96,19 +96,68 @@ def get_category(file):
     return str.split(os.path.splitext(os.path.basename(file))[0], '_')[0]
 
 
-def get_cats(cats_file, small_dir):
-    '''get catagories from file or dir
+def get_cats(cats_file, catg_dir):
+    '''get catagories from file or dir, cache for speed
     Args:
+        cats_file: .json file about categories
+        catg_dir: template file dir
 
+    Returns:
+        dict: categories information
     '''
-    pass
+    if os.path.exists(cats_file):
+        return load_json(cats_file)
 
-def gen_annotations(big_dir, small_dir, out_file):
+    # cache it if it is not exists
+    d = parse_cats(catg_dir)
+    save_to_json(d, cats_file)
+    return d
+
+
+def parse_cats(catg_dir):
+    '''get all categories from a dir,
+       category template file name specification:
+       <catg_name>[_nnn].png
+       catg_name be indicated by user or by system
+
+    Args:
+        catg_dir: template file dir
+
+    Returns:
+        dict: information about categories
+    '''
+    cat_names = set()
+    d = {}
+    next_id = 1
+    for root, _, files in os.walk(catg_dir):
+        rel_folder = os.path.relpath(root, os.path.dirname(catg_dir))
+        for file_name in files:
+            catg = get_category(file_name)
+            # keep category unique
+            if catg in cat_names:
+                continue
+            cat_names.add(catg)
+            full_file_name = os.path.join(root, file_name)
+            small = cv2.imread(full_file_name, 0)
+            if small is None:
+                break
+
+            item = edict()
+            item.name = catg
+            item.folder = rel_folder
+            item.file_name = file_name
+            d['%s' % next_id] = item
+            next_id += 1
+    return d
+
+
+def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
     '''annotate all small object in each big picture in big_dir
     
     Args:
         big_dir: dir for big pictures
         small_dir: dir for small object(category)
+        cats_file: information about categories
         out_file: output result to the json file
         
     Returns:
@@ -116,28 +165,29 @@ def gen_annotations(big_dir, small_dir, out_file):
     '''
 
     cache_small = {}
-    for root, _, files in os.walk(small_dir):
-        for file_name in files:
-            full_file_name = os.path.join(root, file_name)
-            small = cv2.imread(full_file_name, 0)
-            if small is None:
-                break
-            catg = get_category(file_name)
-            cache_small[catg] = small
+
+    cats = get_cats(cats_file, small_dir)
+    for cat_id, val in cats.items():
+        full_file_name = os.path.join(os.path.dirname(small_dir), val['folder'], val['file_name'])
+        small = cv2.imread(full_file_name, 0)
+        if small is None:
+            break
+        cache_small[cat_id] = small
 
     if not cache_small:
         return
 
-    d = edict()
-    cats = [(i + 1, k) for i, k in enumerate(cache_small.keys())]
-    d.categories = list(map(lambda p: {'id':p[0], 'name':p[1]}, cats))
-    d.annotations = []
+    anno_dict = {}
+#     cats = [(i + 1, k) for i, k in enumerate(cache_small.keys())]
+#     d.categories = list(map(lambda p: {'id':p[0], 'name':p[1]}, cats))
+#     d.annotations = []
 
+    images_dict = {}
+    next_image_id = 1
     for root, _, files in os.walk(big_dir):
-        parent = os.path.abspath(os.path.join(big_dir, '..'))
-        abs_root = os.path.abspath(root)
-        rel_folder = str.strip(abs_root.replace(parent, ''), os.path.sep)
-
+#         parent = os.path.abspath(os.path.join(big_dir, '..'))
+#         abs_root = os.path.abspath(root)
+        rel_folder = os.path.relpath(root, big_dir)
         for file_name in files:
             full_file_name = os.path.join(root, file_name)
             big = cv2.imread(full_file_name)
@@ -146,22 +196,30 @@ def gen_annotations(big_dir, small_dir, out_file):
 
             item = {'folder': rel_folder,
                     'filename': file_name,
-                    'size': {'width': big.shape[0], 'height': big.shape[1]}}
+                    'size': {'width': big.shape[1], 'height': big.shape[0]}}
+
+            images_dict['%s' % next_image_id] = item
 
             bbs = []
             for catg, small in cache_small.items():
                 a_catg_bbs = get_bboxes(big, small)
                 if len(a_catg_bbs) == 0:
                     continue
-                bbs.append(bbs_to_dict(a_catg_bbs, catg))
+                m = {}
+                m['%s' % catg] = bbs_to_dict(a_catg_bbs, catg).bbox
+                anno_dict['%s' % next_image_id] = m
+#                 bbs.append(bbs_to_dict(a_catg_bbs, catg))
+            next_image_id += 1
+#             if bbs:
+#                 anno_dict
+#                 item['object'] = bbs
 
-            if bbs:
-                item['object'] = bbs
+#             d.annotations.append(item)
 
-            d.annotations.append(item)
-
-    if d:
-        save_to_json(d, out_file)
+    if images_dict:
+        save_to_json(images_dict, images_file)
+    if anno_dict:
+        save_to_json(anno_dict, annos_file)
 
 
 def approx_reduce(x, fluctation):
@@ -197,9 +255,31 @@ def reduce_boxes(bbs, fluctation):
     return ua
 
 
+def split_dataset(images_file, train_file, val_file):
+    images = load_json(images_file)
+    ids = list(images.keys())
+    ids = np.array(ids)
+    point = int(len(ids) * 0.8)
+    np.random.shuffle(ids)
+    train_set = ids[:point].tolist()
+    val_set = ids[point:].tolist()
+
+    save_int_list(train_set, train_file)
+    save_int_list(val_set, val_file)
+
+def save_int_list(ids, file):
+    with open(file, 'w') as f:
+        f.write('\n'.join(map(str, ids)))
+
+def load_int_list(file):
+    with open(file, 'r') as f:
+        return list(map(int, map(str.strip, f.readlines())))
+
 if __name__ == '__main__':
     ds = '../dataset/'
-    gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'labels.json')
+#     get_cats(ds + 'cats.json', ds + 'atomitems')
+#     gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'labels.json')
+    split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
 #     x = np.array([513, 570, 513, 572, 512, 569, 570, 513])
 #     x_ = approx_reduce(x, 2)
 #     print(x)
