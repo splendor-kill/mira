@@ -19,6 +19,10 @@ class MyEncoder(json.JSONEncoder):
             return super(MyEncoder, self).default(obj)
 
 
+def key_to_int(d):
+    return dict({int(k) if k.isdigit() else k: v for k, v in d.items()})
+
+
 def get_bboxes(big, small):
     '''get list of bounding box of small block in big picture
         
@@ -80,7 +84,7 @@ def load_json(file):
     '''
 
     with open(file, 'r') as f:
-        return json.load(f)
+        return json.load(f,  object_hook=key_to_int)
 
 
 def get_category(file):
@@ -187,7 +191,7 @@ def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
     for root, _, files in os.walk(big_dir):
 #         parent = os.path.abspath(os.path.join(big_dir, '..'))
 #         abs_root = os.path.abspath(root)
-        rel_folder = os.path.relpath(root, big_dir)
+        rel_folder = os.path.relpath(root, os.path.dirname(big_dir))
         for file_name in files:
             full_file_name = os.path.join(root, file_name)
             big = cv2.imread(full_file_name)
@@ -195,8 +199,9 @@ def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
                 break
 
             item = {'folder': rel_folder,
-                    'filename': file_name,
-                    'size': {'width': big.shape[1], 'height': big.shape[0]}}
+                    'file_name': file_name,
+                    'width': big.shape[1],
+                    'height': big.shape[0]}
 
             images_dict['%s' % next_image_id] = item
 
@@ -278,7 +283,7 @@ def load_int_list(file):
 if __name__ == '__main__':
     ds = '../dataset/'
 #     get_cats(ds + 'cats.json', ds + 'atomitems')
-#     gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'labels.json')
+    gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'annotations.json')
     split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
 #     x = np.array([513, 570, 513, 572, 512, 569, 570, 513])
 #     x_ = approx_reduce(x, 2)
