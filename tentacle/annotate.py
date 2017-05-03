@@ -5,6 +5,7 @@ from easydict import EasyDict as edict
 from collections import defaultdict
 import json
 import os
+import time
 
 
 class MyEncoder(json.JSONEncoder):
@@ -25,15 +26,15 @@ def key_to_int(d):
 
 def get_bboxes(big, small):
     '''get list of bounding box of small block in big picture
-        
+
     Args:
-        big: the big picture
-        small: the small block
+        big: the big picture, gray(2d)
+        small: the small block, gray(2d)
 
     Returns:
         list of bounding box(x, y, w, h)
     '''
-    img_gray = cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
+    img_gray = big if big.ndim == 2 else cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
     template = small
     w, h = template.shape[::-1]
 
@@ -84,7 +85,7 @@ def load_json(file):
     '''
 
     with open(file, 'r') as f:
-        return json.load(f,  object_hook=key_to_int)
+        return json.load(f, object_hook=key_to_int)
 
 
 def get_category(file):
@@ -150,7 +151,7 @@ def parse_cats(catg_dir):
             item.name = catg
             item.folder = rel_folder
             item.file_name = file_name
-            d['%s' % next_id] = item
+            d[next_id] = item
             next_id += 1
     return d
 
@@ -194,7 +195,7 @@ def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
         rel_folder = os.path.relpath(root, os.path.dirname(big_dir))
         for file_name in files:
             full_file_name = os.path.join(root, file_name)
-            big = cv2.imread(full_file_name)
+            big = cv2.imread(full_file_name, 0)
             if big is None:
                 break
 
@@ -203,7 +204,7 @@ def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
                     'width': big.shape[1],
                     'height': big.shape[0]}
 
-            images_dict['%s' % next_image_id] = item
+            images_dict[next_image_id] = item
 
             bbs = []
             for catg, small in cache_small.items():
@@ -211,8 +212,8 @@ def gen_annotations(big_dir, small_dir, cats_file, images_file, annos_file):
                 if len(a_catg_bbs) == 0:
                     continue
                 m = {}
-                m['%s' % catg] = bbs_to_dict(a_catg_bbs, catg).bbox
-                anno_dict['%s' % next_image_id] = m
+                m[catg] = bbs_to_dict(a_catg_bbs, catg).bbox
+                anno_dict[next_image_id] = m
 #                 bbs.append(bbs_to_dict(a_catg_bbs, catg))
             next_image_id += 1
 #             if bbs:
@@ -260,6 +261,14 @@ def reduce_boxes(bbs, fluctation):
     return ua
 
 
+def unique_boxes(boxes, scale=1.0):
+    """Return indices of unique boxes."""
+    v = np.array([1, 1e3, 1e6, 1e9])
+    hashes = np.round(boxes * scale).dot(v)
+    _, index = np.unique(hashes, return_index=True)
+    return np.sort(index)
+
+
 def split_dataset(images_file, train_file, val_file):
     images = load_json(images_file)
     ids = list(images.keys())
@@ -282,10 +291,13 @@ def load_int_list(file):
 
 if __name__ == '__main__':
     ds = '../dataset/'
+    begin = time.time()
+
 #     get_cats(ds + 'cats.json', ds + 'atomitems')
     gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'annotations.json')
-    split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
+#     split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
 #     x = np.array([513, 570, 513, 572, 512, 569, 570, 513])
 #     x_ = approx_reduce(x, 2)
 #     print(x)
 #     print(x_)
+    print('time cost(s):', time.time() - begin)

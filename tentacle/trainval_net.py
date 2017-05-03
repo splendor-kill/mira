@@ -1,27 +1,17 @@
-# --------------------------------------------------------
-# Tensorflow Faster R-CNN
-# Licensed under The MIT License [see LICENSE for details]
-# Written by Zheqi He, Xinlei Chen, based on code from Ross Girshick
-# --------------------------------------------------------
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import sys
-lib_path = '/home/splendor/learn/tf-faster-rcnn/lib'
-
-if lib_path not in sys.path:
-    sys.path.insert(0, lib_path)
-
-from model.train_val import get_training_roidb, train_net
-from model.config import cfg, cfg_from_file, cfg_from_list, get_output_dir, get_output_tb_dir
-import datasets.imdb
+import os, sys
 import argparse
 import pprint
 import numpy as np
-import os
-
 import tensorflow as tf
+
+import _init_paths
+from model.train_val import get_training_roidb, train_net
+from model.config import cfg, cfg_from_file, cfg_from_list, get_output_dir, get_output_tb_dir
+import datasets.imdb
 from nets.vgg16 import vgg16
 from nets.res101 import Resnet101
 

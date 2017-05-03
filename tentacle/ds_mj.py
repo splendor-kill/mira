@@ -11,16 +11,13 @@ import scipy.io as sio
 import pickle
 import json
 
-lib_path = '/home/splendor/learn/tf-faster-rcnn/lib'
-
-if lib_path not in sys.path:
-    sys.path.insert(0, lib_path)
-
+import _init_paths
 from datasets.imdb import imdb
 import datasets.ds_utils as ds_utils
 from model.config import cfg
 
-import annotate
+from annotate import load_json
+from annotate import load_int_list
 
 class miradb(imdb):
     def __init__(self, project, image_set):
@@ -30,7 +27,7 @@ class miradb(imdb):
         self._project = project
         self._image_set = image_set
         self._data_path = osp.join(cfg.DATA_DIR, '')
-        cats = annotate.load_json(os.path.join(self._data_path, 'cats.json'))
+        cats = load_json(os.path.join(self._data_path, 'cats.json'))
         cats = dict({k: v['name'] for k, v in cats.items()})
         self._classes = tuple(['__background__'] + list(cats.values()))
         self._class_to_ind = dict(list(zip(self.classes, list(range(self.num_classes)))))
@@ -40,9 +37,9 @@ class miradb(imdb):
         self.set_proposal_method('gt')
         self.competition_mode(False)
 
-        self._images = annotate.load_json(os.path.join(self._data_path, 'images.json'))
+        self._images = load_json(os.path.join(self._data_path, 'images.json'))
 
-        self._annos = annotate.load_json(os.path.join(self._data_path, 'annotations.json'))
+        self._annos = load_json(os.path.join(self._data_path, 'annotations.json'))
         print('images: %d, annotations: %d, dataset: %d' % (len(self._images), len(self._annos), len(self._image_index)))
         annoted = list(self._annos.keys())
 
@@ -50,7 +47,7 @@ class miradb(imdb):
 
     def _load_image_set_index(self):
         file_name = os.path.join(self._data_path, '%s.txt' % self._image_set)
-        return annotate.load_int_list(file_name)
+        return load_int_list(file_name)
 
 
     def loadAnns(self, image_index):
