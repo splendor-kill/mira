@@ -3,4 +3,5 @@
 .pydevproject
 weights/
 tensorboard/
+summary/
 output/

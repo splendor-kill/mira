@@ -1,15 +1,13 @@
 import os
 import numpy as np
-# import matplotlib.pyplot as plt
 import cv2
 from easydict import EasyDict as edict
 
+from annotate import load_json
+from annotate import save_to_json
+
 cfg = edict()
 cfg.data_dir = '.'
-
-
-# queryImage = cv2.imread('/home/splendor/win/mira/dataset/atomitems/b5.png', 0)
-# trainingImage = cv2.imread('/home/splendor/win/mira/dataset/bigpics/sikuliximage-1493200928403.png')
 
 
 def browse2(file_dir, template):
@@ -134,7 +132,7 @@ def reduce_bbs(bbs, fluctation):
     y_ = approx_reduce(y, fluctation)
     a[:, 0] = x_
     a[:, 1] = y_
-    ua = np.unique(a.view(np.dtype((np.void, a.dtype.itemsize*a.shape[1])))).view(a.dtype).reshape(-1, a.shape[1])
+    ua = np.unique(a.view(np.dtype((np.void, a.dtype.itemsize * a.shape[1])))).view(a.dtype).reshape(-1, a.shape[1])
     return ua
 
 
@@ -156,7 +154,7 @@ def browse(file_dir, template):
                     cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
             print()
             x0, y0, w, h, gap = 286, 582, 56, 66, 16
-            cv2.rectangle(image, (x0, y0), (x0 + 14*w + gap, y0+h), (255, 0, 0), 2)
+            cv2.rectangle(image, (x0, y0), (x0 + 14 * w + gap, y0 + h), (255, 0, 0), 2)
             cv2.imshow('pic browser', image)
             k = cv2.waitKey(0)
             if k == ord('q'):
@@ -175,13 +173,13 @@ def get_pieces(pic):
     hands = []
     x0, y0, w, h, gap, ml, mr = 286, 583, 56, 65, 16, 2, 1
     for i in range(13):
-        x = x0+w*i+ml
-        s = img[y0:y0+h, x:x+w-ml-mr, :]
+        x = x0 + w * i + ml
+        s = img[y0:y0 + h, x:x + w - ml - mr, :]
         # print(s.shape)
         hands.append(s)
 
-    x = x0 + 13*w + gap
-    s = img[y0:y0+h, x:x+w, :]
+    x = x0 + 13 * w + gap
+    s = img[y0:y0 + h, x:x + w, :]
     hands.append(s)
 
     # for i, s in enumerate(hands):
@@ -202,7 +200,7 @@ def get_pieces_batch(file_dir, out_dir):
 
     print('pieces num:', len(hands))
     for i, s in enumerate(hands):
-        out_file = os.path.join(out_dir, '%s_%d.png' % ('p', i+1))
+        out_file = os.path.join(out_dir, '%s_%d.png' % ('p', i + 1))
         cv2.imwrite(out_file, s)
 
 
@@ -254,13 +252,13 @@ def test_hist(file_dir):
             # pieces = []
             x0, y0, w, h, gap, ml, mr = 285, 583, 56, 65, 16, 2, 1
             for i in range(14):
-                x = x0+w*i+ml
+                x = x0 + w * i + ml
                 x += gap if i == 13 else 0
-                s = img[y0:y0+h, x:x+w-ml-mr, :]
+                s = img[y0:y0 + h, x:x + w - ml - mr, :]
                 cat_id = most_like_hist(s, hists)
                 print('most like:', cats[cat_id]['name'])
                 # pieces.append({'bbox': (x, y0, w-ml-mr, h), 'cat_id': cat_id})
-                cv2.rectangle(img, (x, y0), (x + w-ml-mr, y0+h), (255, 0, 0), 2)
+                cv2.rectangle(img, (x, y0), (x + w - ml - mr, y0 + h), (255, 0, 0), 2)
                 cv2.putText(img, cats[cat_id]['name'], (x, y0), font, 1, (255, 255, 0), 2)
 
             cv2.imshow('pic browser', img)
@@ -280,19 +278,21 @@ def cats_feature(sift, cats):
     return dess
 
 
-def most_like_feature(sift, bf, img, features):
-    _, des = sift.detectAndCompute(img, None)
-
-    def get_dis(f1, f2):
-        m = bf.match(f1, f2)
-        distance = [i.distance for i in m]
-        distance = np.array(distance)
-        return distance
+def most_like_feature(sift, matcher, des, features):
+    def get_score(f1, f2):
+        matches = matcher.knnMatch(f1, f2, k=2)
+        good_matches = [x for x in matches if x[0].distance < 0.7 * x[1].distance]
+        good_matches = [good_matches[i][0] for i in range(len(good_matches))]
+        if len(good_matches) < 5:
+            return 0
+        score = len(good_matches) / len(matches)
+#         if score < 0.8:
+#             return 0
+        return score
 
     sims = []
     for k, v in features.items():
-        dis = get_dis(des, v)
-        score = np.mean(dis)
+        score = get_score(v, des)
         sims.append((k, score))
     sims = np.array(sims)
     # print('sims shape:', sims.shape)
@@ -300,7 +300,7 @@ def most_like_feature(sift, bf, img, features):
     return sims[idx_most_like, 0]
 
 
-def test_feature_match(file_dir):
+def test_feature_match(file_dir, images_file=None, annos_file=None):
     import json
     cats_file = os.path.join(cfg.data_dir, 'cats.json')
     print(cats_file)
@@ -308,44 +308,111 @@ def test_feature_match(file_dir):
         cats = json.load(f)
 
     sift = cv2.xfeatures2d.SIFT_create()
-    dess = cats_feature(sift, cats)
-    # print('len(hists) = %d' % len(hists))
+    surf = cv2.xfeatures2d.SURF_create(extended=True)
 
-    bf = cv2.BFMatcher()
+    dess_sift = cats_feature(sift, cats)
+    dess_surf = cats_feature(surf, cats)
+
+    FLANN_INDEX_KDTREE = 0
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
+    search_params = dict(checks=50)
+    flann = cv2.FlannBasedMatcher(index_params, search_params)
+
     font = cv2.FONT_HERSHEY_SIMPLEX
 
+    anno_dict = {}
+    images_dict = {}
+    next_image_id = 1
+
     for root, _, files in os.walk(file_dir):
+        rel_folder = os.path.relpath(root, os.path.dirname(file_dir))
         for file_name in files:
             full_file_name = os.path.join(root, file_name)
-            img = cv2.imread(full_file_name, 0)
+            img = cv2.imread(full_file_name)
+            img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             assert img is not None
 
-            x0, y0, w, h, gap, ml, mr = 285, 583, 56, 65, 16, 2, 1
-            for i in range(14):
-                x = x0+w*i+ml
-                x += gap if i == 13 else 0
-                s = img[y0:y0+h, x:x+w-ml-mr]
-                cat_id = most_like_feature(sift, bf, s, dess)
-                print('most like:', cats[cat_id]['name'])
+            item = {'folder': rel_folder,
+                    'file_name': file_name,
+                    'width': img_gray.shape[1],
+                    'height': img_gray.shape[0]}
+            images_dict[next_image_id] = item
 
-                cv2.rectangle(img, (x, y0), (x + w-ml-mr, y0+h), (255, 0, 0), 2)
-                cv2.putText(img, cats[cat_id]['name'], (x, y0), font, 1, (255, 255, 0), 2)
+            try:
+                m = {}
+                x0, y0, w, h, gap, ml, mr = 285, 583, 56, 65, 16, 2, 1
+                for i in range(14):
+                    x = x0 + w * i + ml
+                    x += gap if i == 13 else 0
+                    s = img_gray[y0:y0 + h, x:x + w - ml - mr]
+                    s_kp, s_des = sift.detectAndCompute(s, None)
+#                     print(len(s_kp), len(s_des))
+                    if len(s_des) > 10:
+                        cat_id = most_like_feature(sift, flann, s_des, dess_sift)
+                    else:
+                        _, s_des = surf.detectAndCompute(s, None)
+                        cat_id = most_like_feature(surf, flann, s_des, dess_surf)
+#                         print('using surf:', len(s_des))
+    #                 print('most like:', cats[cat_id]['name'])
+                    if not cat_id in m:
+                        m[cat_id] = {'name': cat_id, 'bbox': []}
+                    m[cat_id]['bbox'].append({'x':x, 'y':y0, 'w':w - ml - mr, 'h':h})
 
-            cv2.imshow('pic browser', img)
-            k = cv2.waitKey(0)
-            if k == ord('q'):
-                return
+#                     cv2.rectangle(img, (x, y0), (x + w-ml-mr, y0+h), (255, 0, 0), 2)
+#                     cv2.putText(img, cats[cat_id]['name'], (x, y0), font, 1, (255, 255, 0), 2)
+                anno_dict[next_image_id] = m
+            except Exception:
+                print('sth happened:', file_name)
+#             print()
+#             cv2.imshow('pic browser', img)
+#             k = cv2.waitKey(0)
+#             if k == ord('q'):
+#                 return
+            next_image_id += 1
+
+    if images_dict and images_file:
+        save_to_json(images_dict, images_file)
+    if anno_dict and annos_file:
+        save_to_json(anno_dict, annos_file)
+
+
+def verify_annotation(data_dir):
+    cats = load_json(os.path.join(data_dir, 'cats.json'))
+    img_j = load_json(os.path.join(data_dir, 'images.json'))
+    anno_j = load_json(os.path.join(data_dir, 'annotations.json'))
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    for k, v in img_j.items():
+        full_name = os.path.join(data_dir, v['folder'], v['file_name'])
+        img = cv2.imread(full_name)
+        for cat_id in cats.keys():
+            anno = anno_j[k]
+            assert anno is not None
+            if not cat_id in anno:
+                continue
+            bbs = anno[cat_id]['bbox']
+            for b in bbs:
+                x, y, w, h = b['x'], b['y'], b['w'], b['h']
+                cv2.rectangle(img, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                cv2.putText(img, cats[cat_id]['name'], (x, y), font, 1, (255, 255, 0), 2)
+
+        cv2.imshow('check annotations', img)
+        k = cv2.waitKey(0)
+        if k == ord('q'):
+            return
+
 
 
 if __name__ == '__main__':
     cfg.data_dir = '/home/splendor/win/mira/dataset/'
     # big_dir = os.path.join(cfg.data_dir, 'bigpics')
-    big_dir = '/home/splendor/jumbo/annlab/mj/Sikulix_412889041'
-    template = cv2.imread(os.path.join(cfg.data_dir, 'atomitems/b4.png'), 0)
+    big_dir = '/home/splendor/jumbo/annlab/mj/bigpics_'
+#     template = cv2.imread(os.path.join(cfg.data_dir, 'atomitems/b4.png'), 0)
     # browse(big_dir, template)
     # browse2(big_dir, template)
     # test_hist(os.path.join(cfg.data_dir, 'bigpics'))
-    test_feature_match(os.path.join(cfg.data_dir, 'bigpics'))
+    test_feature_match(big_dir, cfg.data_dir + 'images.json', cfg.data_dir + 'annotations.json')
+#     verify_annotation(cfg.data_dir)
     # hands = get_pieces('/home/splendor/win/mira/dataset/bigpics/sikuliximage-1493200895127.png')
     # same = np.allclose(hands[4], hands[5])
     # print('piece %d and %d are %ssame' % (4, 5, '' if same else 'not '))

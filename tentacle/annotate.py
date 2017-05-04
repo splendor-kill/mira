@@ -294,8 +294,8 @@ if __name__ == '__main__':
     begin = time.time()
 
 #     get_cats(ds + 'cats.json', ds + 'atomitems')
-    gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'annotations.json')
-#     split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
+#     gen_annotations(ds + 'bigpics', ds + 'atomitems', ds + 'cats.json', ds + 'images.json', ds + 'annotations.json')
+    split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
 #     x = np.array([513, 570, 513, 572, 512, 569, 570, 513])
 #     x_ = approx_reduce(x, 2)
 #     print(x)

@@ -10,7 +10,7 @@ import tensorflow as tf
 
 import _init_paths
 from model.train_val import get_training_roidb, train_net
-from model.config import cfg, cfg_from_file, cfg_from_list, get_output_dir, get_output_tb_dir
+from model.config import cfg, cfg_from_file, cfg_from_list, get_output_dir
 import datasets.imdb
 from nets.vgg16 import vgg16
 from nets.res101 import Resnet101
@@ -80,8 +80,13 @@ def combined_roidb(imdb_names):
         roidb = get_training_roidb(imdb)
         return imdb, roidb
 
-    roidbs = [get_roidb(s) for s in imdb_names.split('+')]
-    imdb, roidb = roidbs[0]
+#     roidbs = [get_roidb(s) for s in imdb_names.split('+')]
+#     imdb, roidb = roidbs[0]
+    imdb = get_imdb(imdb_names)
+    print('Loaded dataset `{:s}` for training'.format(imdb.name))
+    imdb.set_proposal_method(cfg.TRAIN.PROPOSAL_METHOD)
+    print('Set proposal method: {:s}'.format(cfg.TRAIN.PROPOSAL_METHOD))
+    roidb = get_training_roidb(imdb)
 #     if len(roidbs) > 1:
 #         for r in roidbs[1:]:
 #             roidb.extend(r)
@@ -90,6 +95,19 @@ def combined_roidb(imdb_names):
 #     else:
 #         imdb = get_imdb(imdb_names)
     return imdb, roidb
+
+
+def get_output_tb_dir(imdb, weights_filename):
+  """overwrite model.config.get_output_tb_dir
+  change dir 'tensorboard' to 'summary'
+  """
+  outdir = os.path.abspath(os.path.join(cfg.ROOT_DIR, 'summary', cfg.EXP_DIR, imdb.name))
+  if weights_filename is None:
+    weights_filename = 'default'
+  outdir = os.path.join(outdir, weights_filename)
+  if not os.path.exists(outdir):
+    os.makedirs(outdir)
+  return outdir
 
 
 if __name__ == '__main__':

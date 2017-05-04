@@ -110,7 +110,7 @@ class miradb(imdb):
         ix = 0
         for cat_id, bbs in objs.items():
             cls = coco_cat_id_to_class_ind[cat_id]
-            for bb in bbs:
+            for bb in bbs['bbox']:
                 x1 = bb['x']
                 y1 = bb['y']
                 w = bb['w']
