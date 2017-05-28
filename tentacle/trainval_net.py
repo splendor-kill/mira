@@ -15,7 +15,8 @@ import datasets.imdb
 from nets.vgg16 import vgg16
 from nets.res101 import Resnet101
 
-from ds_mj import miradb
+# from ds_mj import miradb
+from ds_mj_pascal import ds_mj_pascal
 
 def parse_args():
     """
@@ -59,7 +60,7 @@ __sets = {}
 for project in ['mj']:
     for split in ['train', 'val']:
         name = '{}_{}'.format(project, split)
-        __sets[name] = (lambda split=split, project=project: miradb(project, split))
+        __sets[name] = (lambda split=split, project=project: ds_mj_pascal(project, split))
           
 def get_imdb(name):
     if name not in __sets:

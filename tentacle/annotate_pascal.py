@@ -8,6 +8,7 @@ from xml.etree.ElementTree import Element, SubElement
 import os
 import time
 import datetime
+import random
 from annotate import load_json
 
 
@@ -268,25 +269,25 @@ def unique_boxes(boxes, scale=1.0):
     return np.sort(index)
 
 
-def split_dataset(images_file, train_file, val_file):
-    images = load_json(images_file)
-    ids = list(images.keys())
-    ids = np.array(ids)
+def split_dataset(annos_dir, image_sets_dir):
+    ids = []
+    for f in os.listdir(annos_dir):
+        ids.append(os.path.splitext(f)[0])
+    random.shuffle(ids)
     point = int(len(ids) * 0.8)
-    np.random.shuffle(ids)
-    train_set = ids[:point].tolist()
-    val_set = ids[point:].tolist()
+    train_set = ids[:point]
+    val_set = ids[point:]
 
-    save_int_list(train_set, train_file)
-    save_int_list(val_set, val_file)
+    save_id_list(train_set, os.path.join(image_sets_dir, 'train.txt'))
+    save_id_list(val_set, os.path.join(image_sets_dir, 'val.txt'))
 
-def save_int_list(ids, file):
+def save_id_list(ids, file):
     with open(file, 'w') as f:
-        f.write('\n'.join(map(str, ids)))
+        f.write('\n'.join(ids))
 
-def load_int_list(file):
+def load_id_list(file):
     with open(file, 'r') as f:
-        return list(map(int, map(str.strip, f.readlines())))
+        return list(map(str.strip, f.readlines()))
 
 def save_to_xml2(info, bbs, cats, new_file_name, file):
     root = Element('annotation')
@@ -341,12 +342,12 @@ if __name__ == '__main__':
 
 #     gen_annotations('/home/splendor/jumbo/annlab/mj/bigpics_test',
 #                     ds + 'atomitems', ds + 'cats.json', 'qqmj', ds + 'anno_pascal')
-#     split_dataset(ds + 'images.json', ds + 'train.txt', ds + 'val.txt')
-    convert_to_pascal_from_coco(ds + 'bigpics',
-                                ds + 'annotations.json',
-                                ds + 'images.json',
-                                ds + 'cats.json',
-                                'qqmj',
-                                ds + 'anno_pascal')
+    split_dataset(ds + 'ds_mj/annotations', ds + 'ds_mj/sets')
+#     convert_to_pascal_from_coco(ds + 'bigpics',
+#                                 ds + 'annotations.json',
+#                                 ds + 'images.json',
+#                                 ds + 'cats.json',
+#                                 'qqmj',
+#                                 ds + 'anno_pascal')
 
     print('time cost(s):', time.time() - begin)
