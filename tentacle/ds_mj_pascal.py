@@ -14,7 +14,6 @@ import datasets.ds_utils as ds_utils
 from model.config import cfg
 
 from annotate import load_json
-from annotate import load_int_list
 
 
 class ds_mj_pascal(imdb):

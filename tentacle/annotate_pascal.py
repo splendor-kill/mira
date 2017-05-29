@@ -10,6 +10,8 @@ import time
 import datetime
 import random
 from annotate import load_json
+from annotate import get_cats
+from annotate import get_bboxes, bbs_to_dict
 
 
 def check_a_file(xml_file, data_dir):
@@ -29,113 +31,6 @@ def check_a_file(xml_file, data_dir):
         cv2.putText(img, cat, (xmin, ymin), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
     cv2.imshow('show', img)
     cv2.waitKey(0)
-
-
-def get_bboxes(big, small):
-    '''get list of bounding box of small block in big picture
-
-    Args:
-        big: the big picture, gray(2d)
-        small: the small block, gray(2d)
-
-    Returns:
-        list of bounding box(x, y, w, h)
-    '''
-    img_gray = big if big.ndim == 2 else cv2.cvtColor(big, cv2.COLOR_BGR2GRAY)
-    template = small
-    w, h = template.shape[::-1]
-
-    res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
-    threshold = 0.8
-    loc = np.where(res >= threshold)
-
-    bbs = []
-    for pt in zip(*loc[::-1]):
-        bbs.append((pt[0], pt[1], w, h))
-    if len(bbs) != 0:
-        bbs = reduce_boxes(bbs, 2).tolist()
-    return bbs
-
-
-def bbs_to_dict(bbs, label):
-    '''covert list of bounding box to dict asso with label
-    
-    Args:
-        bbs: list of bounding box
-        label: the category label of small image
-    '''
-    ss = 'xywh'
-    d = edict({'name': label,
-               'bbox': list(map(lambda x: dict(zip(ss, x)), bbs))})
-    return d
-
-
-def get_category(file):
-    '''get image category from file name prefix
-    
-    Args:
-        file: suppose the catgory is the first part 
-            of file split with underscore
-    
-    Returns:
-        the category string
-    '''
-    return str.split(os.path.splitext(os.path.basename(file))[0], '_')[0]
-
-
-def get_cats(cats_file, catg_dir):
-    '''get catagories from file or dir, cache for speed
-    Args:
-        cats_file: .json file about categories
-        catg_dir: template file dir
-
-    Returns:
-        dict: categories information
-    '''
-    if os.path.exists(cats_file):
-        return load_json(cats_file)
-
-    # cache it if it is not exists
-    d = parse_cats(catg_dir)
-    save_to_json(d, cats_file)
-    return d
-
-
-def parse_cats(catg_dir):
-    '''get all categories from a dir,
-       category template file name specification:
-       <catg_name>[_nnn].png
-       catg_name be indicated by user or by system
-
-    Args:
-        catg_dir: template file dir
-
-    Returns:
-        dict: information about categories
-    '''
-    cat_names = set()
-    d = {}
-    next_id = 1
-    for root, _, files in os.walk(catg_dir):
-        rel_folder = os.path.relpath(root, os.path.dirname(catg_dir))
-        for file_name in files:
-            catg = get_category(file_name)
-            # keep category unique
-            if catg in cat_names:
-                continue
-            cat_names.add(catg)
-            full_file_name = os.path.join(root, file_name)
-            small = cv2.imread(full_file_name, 0)
-            if small is None:
-                break
-
-            item = edict()
-            item.name = catg
-            item.folder = rel_folder
-            item.file_name = file_name
-            d[next_id] = item
-            next_id += 1
-    return d
 
 
 def save_to_xml(obj, file):
@@ -159,11 +54,6 @@ def save_to_xml(obj, file):
 #     print(ET.tostring(root))
     tree = ET.ElementTree(root)
     tree.write(file)
-
-
-def load_xml(file):
-    with open(file, 'r') as f:
-        pass
 
 
 def gen_annotations(big_dir, small_dir, cats_file, prefix, annos_dir):
@@ -228,47 +118,6 @@ def gen_annotations(big_dir, small_dir, cats_file, prefix, annos_dir):
             next_image_id += 1
 
 
-def approx_reduce(x, fluctation):
-    x_inc = np.sort(x)
-    si = np.argsort(x, kind='mergesort')
-    delta = np.diff(x_inc)
-    x_keep = np.append([1], delta >= fluctation)
-    remains = x_inc[x_keep > 0]
-    stairs = np.cumsum(x_keep) - 1
-    reduced = np.array([remains[i] for i in stairs])
-    return reduced[np.argsort(si)]
-
-
-def reduce_boxes(bbs, fluctation):
-    '''reduce this box if it is redundant,
-    that is two boxes have same position and size approximately
-
-    Args:
-        bbs: bounding boxes may have redundant boxes
-
-    Returns:
-        reduced bounding boxes
-    '''
-    assert len(bbs) > 0
-    a = np.array(bbs)
-    x = a[:, 0]
-    y = a[:, 1]
-    x_ = approx_reduce(x, fluctation)
-    y_ = approx_reduce(y, fluctation)
-    a[:, 0] = x_
-    a[:, 1] = y_
-    ua = np.unique(a.view(np.dtype((np.void, a.dtype.itemsize * a.shape[1])))).view(a.dtype).reshape(-1, a.shape[1])
-    return ua
-
-
-def unique_boxes(boxes, scale=1.0):
-    """Return indices of unique boxes."""
-    v = np.array([1, 1e3, 1e6, 1e9])
-    hashes = np.round(boxes * scale).dot(v)
-    _, index = np.unique(hashes, return_index=True)
-    return np.sort(index)
-
-
 def split_dataset(annos_dir, image_sets_dir):
     ids = []
     for f in os.listdir(annos_dir):
@@ -281,13 +130,16 @@ def split_dataset(annos_dir, image_sets_dir):
     save_id_list(train_set, os.path.join(image_sets_dir, 'train.txt'))
     save_id_list(val_set, os.path.join(image_sets_dir, 'val.txt'))
 
+
 def save_id_list(ids, file):
     with open(file, 'w') as f:
         f.write('\n'.join(ids))
 
+
 def load_id_list(file):
     with open(file, 'r') as f:
         return list(map(str.strip, f.readlines()))
+
 
 def save_to_xml2(info, bbs, cats, new_file_name, file):
     root = Element('annotation')
@@ -307,9 +159,9 @@ def save_to_xml2(info, bbs, cats, new_file_name, file):
             SubElement(bndbox_node, 'xmax').text = str(box['x'] + box['w'])
             SubElement(bndbox_node, 'ymax').text = str(box['y'] + box['h'])
 
-#     print(ET.tostring(root))
     tree = ET.ElementTree(root)
     tree.write(file)
+
 
 def convert_to_pascal_from_coco(big_dir, annos_json, images_json, cats_json, prefix, annos_dir):
     cats = load_json(cats_json)
@@ -338,7 +190,6 @@ def convert_to_pascal_from_coco(big_dir, annos_json, images_json, cats_json, pre
 if __name__ == '__main__':
     ds = '../dataset/'
     begin = time.time()
-
 
 #     gen_annotations('/home/splendor/jumbo/annlab/mj/bigpics_test',
 #                     ds + 'atomitems', ds + 'cats.json', 'qqmj', ds + 'anno_pascal')

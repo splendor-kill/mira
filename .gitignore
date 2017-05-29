@@ -5,3 +5,5 @@ weights/
 tensorboard/
 summary/
 output/
+logs/
+output

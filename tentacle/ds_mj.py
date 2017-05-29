@@ -31,7 +31,7 @@ class miradb(imdb):
         cats = dict({k: v['name'] for k, v in cats.items()})
         self._classes = tuple(['__background__'] + list(cats.values()))
         self._class_to_ind = dict(list(zip(self.classes, list(range(self.num_classes)))))
-        self._class_to_coco_cat_id = dict([(v, k) for k, v in cats.items()])
+        self._class_to_cat_id = dict([(v, k) for k, v in cats.items()])
         self._image_index = self._load_image_set_index()
         # Default to roidb handler
         self.set_proposal_method('gt')
@@ -104,7 +104,7 @@ class miradb(imdb):
         overlaps = np.zeros((num_objs, self.num_classes), dtype=np.float32)
         seg_areas = np.zeros((num_objs), dtype=np.float32)
 
-        coco_cat_id_to_class_ind = dict([(self._class_to_coco_cat_id[cls],
+        coco_cat_id_to_class_ind = dict([(self._class_to_cat_id[cls],
                                       self._class_to_ind[cls])
                                      for cls in self._classes[1:]])
         ix = 0
@@ -185,7 +185,7 @@ class miradb(imdb):
                 continue
             print('Collecting {} results ({:d}/{:d})'.format(cls, cls_ind,
                                                            self.num_classes - 1))
-            coco_cat_id = self._class_to_coco_cat_id[cls]
+            coco_cat_id = self._class_to_cat_id[cls]
             results.extend(self._coco_results_one_category(all_boxes[cls_ind],
                                                          coco_cat_id))
         print('Writing results json to {}'.format(res_file))
