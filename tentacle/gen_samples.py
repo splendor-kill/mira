@@ -3,12 +3,15 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import os
+import glob
 from easydict import EasyDict as edict
 from annotate import load_json, get_category
 from PIL import Image
 from skimage import img_as_float
 from skimage import img_as_ubyte
-
+import xml.etree.ElementTree as ET
+from xml.etree.ElementTree import Element, SubElement
+import time
 
 cfg = edict()
 
@@ -21,10 +24,15 @@ def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
-def record_cats(cats_json, cats_dirs, tfrecords_filename):
+def load_cats(cats_json):
     cats = load_json(cats_json)
     cats = {k: v['name'] for k, v in cats.items()}
     class_to_catid = dict([(v, k) for k, v in cats.items()])
+    return cats, class_to_catid
+
+
+def record_cats(cats_json, cats_dirs, tfrecords_filename):
+    _, class_to_catid = load_cats(cats_json)
 
     records = []
     writer = tf.python_io.TFRecordWriter(tfrecords_filename)
@@ -65,17 +73,29 @@ def load_record(tfrecords_filename):
     return reconstructed_images
 
 
-def rand_pos(bg_file, width, height, w1, h1, num):
-    sess = tf.Session()
+def save_to_xml(folder, width, height, bbs, cats, new_file_name, file):
+    root = Element('annotation')
+    SubElement(root, 'folder').text = folder
+    SubElement(root, 'filename').text = new_file_name
+    size_node = SubElement(root, 'size')
+    SubElement(size_node, 'width').text = str(width)
+    SubElement(size_node, 'height').text = str(height)
 
-    tfrecords_filename = os.path.join(cfg.dat_dir, 'small.tfrecords')
-    smalls = load_record(tfrecords_filename)
-    tmp = []
-    for img, catid in smalls:
-        img_op = tf.image.convert_image_dtype(img, tf.float32)
-        img = sess.run(img_op)
-        tmp.append((img, catid))
-    smalls = tmp
+    for catg, x, y, x1, y1 in bbs:
+        object_node = SubElement(root, 'object')
+        SubElement(object_node, 'name').text = cats[catg]
+        bndbox_node = SubElement(object_node, 'bndbox')
+        SubElement(bndbox_node, 'xmin').text = str(x)
+        SubElement(bndbox_node, 'ymin').text = str(y)
+        SubElement(bndbox_node, 'xmax').text = str(x1)
+        SubElement(bndbox_node, 'ymax').text = str(y1)
+
+    tree = ET.ElementTree(root)
+    tree.write(file)
+
+
+def rand_pos(sess, smalls, bg_file, width, height, w1, h1, num):
+
 
     sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
         [w1, h1, 3],
@@ -86,7 +106,7 @@ def rand_pos(bg_file, width, height, w1, h1, num):
         max_attempts=100,
         use_image_if_no_bounding_boxes=True)
 
-    n_blocks = (width//w1) * (height//h1)
+    n_blocks = (width // w1) * (height // h1)
 
     distorted_bboxes = []
     for i in range(n_blocks):
@@ -105,17 +125,18 @@ def rand_pos(bg_file, width, height, w1, h1, num):
         norm_bboxes.append((*lt, *br))
     norm_bboxes = np.array(norm_bboxes)
 
-    print(norm_bboxes.shape)
+#     print(norm_bboxes.shape)
     img = np.array(Image.open(bg_file).convert('RGB'))
     img = np.asanyarray(img_as_float(img), np.float32)
     img_color_op = distort_color(img)
     img = sess.run(img_color_op)
-    print(img.shape, img.dtype)
-    fig, ax = plt.subplots(1)
+#     print(img.shape, img.dtype)
+#     fig, ax = plt.subplots(1)
 
+    bbs = []
     idx = np.random.choice(norm_bboxes.shape[0], size=num, replace=False)
     for y, x, y1, x1 in norm_bboxes[idx, :]:
-        w, h = x1-x, y1-y
+        w, h = x1 - x, y1 - y
 #         print(x, y, x1, y1, w, h)
 #             rect = patches.Rectangle((x, y), w, h, linewidth=3, edgecolor=np.random.rand(3, 1), facecolor='none')
 #             ax.add_patch(rect)
@@ -125,12 +146,66 @@ def rand_pos(bg_file, width, height, w1, h1, num):
         new_small = distort_image(small_img, h, w, [[[0, 0., 1, 1]]], degree_rotate=rot)
 
         small1 = sess.run(new_small)
-        print(small1.shape, small1.dtype)
-        img[y:y+h, x:x+w, :] = small1
-    ax.imshow(img)
-    plt.show()
+#         print(small1.shape, small1.dtype)
+        if h == small1.shape[1]:
+            img[y:y + h, x:x + w, :] = np.fliplr(small1.swapaxes(0, 1))
+        else:
+            img[y:y + h, x:x + w, :] = small1
 
+        bbs.append((small_catid, x, y, x1, y1))
+#     ax.imshow(img)
+#     plt.show()
+
+    return img, bbs
+
+
+def augment(bg_file, width, height, w1, h1, num_pieces, num_imgs, image_dir, prefix, annos_dir, cats_json):
+    sess = tf.Session()
+
+    cats, _ = load_cats(cats_json)
+    next_image_id = get_max_image_id(prefix, annos_dir) + 1
+
+    tfrecords_filename = os.path.join(cfg.dat_dir, 'small.tfrecords')
+    smalls = load_record(tfrecords_filename)
+    tmp = []
+    for img, catid in smalls:
+        img_op = tf.image.convert_image_dtype(img, tf.float32)
+        img = sess.run(img_op)
+        tmp.append((img, catid))
+    smalls = tmp
+
+    begin = time.time()
+    costs = []
+    for i in range(num_imgs):
+        t1 = time.time()
+        img, bbs = rand_pos(sess, smalls, bg_file, width, height, w1, h1, num_pieces)
+        t2 = time.time()
+        new_file_name = '%s_%05d' % (prefix, next_image_id)
+        img = Image.fromarray(img_as_ubyte(img))
+        img.save(os.path.join(image_dir, new_file_name + '.png'))
+        save_to_xml(os.path.relpath(image_dir, cfg.dat_dir), width, height, bbs, cats,
+                    new_file_name + '.png', os.path.join(annos_dir, new_file_name + '.xml'))
+        t3 = time.time()
+        next_image_id += 1
+        costs.append((t2-t1, t3-t2))
+        if i % 100 == 0:
+            print(i, costs[-1][0] + costs[-1][0] - costs[0][0] - costs[0][0])
+
+    costs = np.array(costs)
+    costs_avg = costs.mean(axis=0)
+    total = time.time() - begin
+    print('time cost(s): all(%f), avg(%f), gen_avg(%f), save_avg(%f)' % (total, total / num_imgs, costs_avg[0], costs_avg[1]))
     sess.close()
+
+
+def get_max_image_id(prefix, annos_dir):
+    max_id = 0
+    for f in glob.glob(os.path.join(annos_dir, '%s_*.xml' % (prefix,))):
+        f = os.path.basename(f)
+        f = os.path.splitext(f)[0]
+        f = f.replace('%s_' % (prefix,), '')
+        max_id = max(max_id, int(f))
+    return max_id
 
 
 def gen(bg_file):
@@ -276,9 +351,6 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_ro
     distorted_image = tf.image.resize_images(distorted_image, [height, width],
                                              method=resize_method)
 
-#     distorted_image = tf.image.rot90(distorted_image, k=degree_rotate)
-    # Restore the shape since the dynamic slice based upon the bbox_size loses
-    # the third dimension.
     distorted_image.set_shape([height, width, 3])
     if not thread_id:
       tf.summary.image('cropped_resized_image',
@@ -291,6 +363,9 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_ro
     if not thread_id:
       tf.summary.image('final_distorted_image',
                        tf.expand_dims(distorted_image, 0))
+
+    distorted_image = tf.image.rot90(distorted_image, k=degree_rotate)
+
     return distorted_image
 
 
@@ -305,4 +380,10 @@ if __name__ == '__main__':
 #                 cats_dirs,
 #                 os.path.join(cfg.dat_dir, 'small.tfrecords'))
 #     images = load_record(os.path.join(cfg.dat_dir, 'small.tfrecords'))
-    rand_pos(bg_file, 1024, 1024, 128, 128, 14)
+#     rand_pos(bg_file, 1024, 1024, 128, 128, 14)
+
+    augment(bg_file, 1024, 1024, 128, 128, 14, 7200,
+            cfg.dat_dir + 'mj/ds_gen/images',
+            'generated',
+            cfg.dat_dir + 'mj/ds_gen/annotations',
+            cfg.dat_dir + 'cats.json')
