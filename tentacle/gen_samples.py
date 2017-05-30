@@ -94,18 +94,9 @@ def save_to_xml(folder, width, height, bbs, cats, new_file_name, file):
     tree.write(file)
 
 
-def rand_pos(sess, smalls, bg_file, width, height, w1, h1, num):
-
-
-    sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
-        [w1, h1, 3],
-        bounding_boxes=[[[0, 0., 1, 1]]],
-        min_object_covered=0.1,
-        aspect_ratio_range=[0.75, 1.33],
-        area_range=[0.75, .9],
-        max_attempts=100,
-        use_image_if_no_bounding_boxes=True)
-
+def rand_pos(sess, sample_distorted_bounding_box, bg_rand_op,
+             distort_op, img_float_pl, out_size_pl, times_rot90_pl,
+             smalls, bg_img, width, height, w1, h1, num):
     n_blocks = (width // w1) * (height // h1)
 
     distorted_bboxes = []
@@ -125,11 +116,7 @@ def rand_pos(sess, smalls, bg_file, width, height, w1, h1, num):
         norm_bboxes.append((*lt, *br))
     norm_bboxes = np.array(norm_bboxes)
 
-#     print(norm_bboxes.shape)
-    img = np.array(Image.open(bg_file).convert('RGB'))
-    img = np.asanyarray(img_as_float(img), np.float32)
-    img_color_op = distort_color(img)
-    img = sess.run(img_color_op)
+    img = sess.run(bg_rand_op, feed_dict={img_float_pl: bg_img})
 #     print(img.shape, img.dtype)
 #     fig, ax = plt.subplots(1)
 
@@ -143,9 +130,13 @@ def rand_pos(sess, smalls, bg_file, width, height, w1, h1, num):
         small_idx = np.random.choice(len(smalls), size=1)[0]
         small_img, small_catid = smalls[small_idx][0], smalls[small_idx][1]
         rot = np.random.randint(4, size=1)[0]
-        new_small = distort_image(small_img, h, w, [[[0, 0., 1, 1]]], degree_rotate=rot)
+#         new_small = distort_image(small_img, h, w, [[[0, 0., 1, 1]]], times_rot90=rot)
 
-        small1 = sess.run(new_small)
+        small1 = sess.run(distort_op,
+                          feed_dict={img_float_pl: small_img,
+                                     out_size_pl: (h, w),
+                                     times_rot90_pl: rot})
+
 #         print(small1.shape, small1.dtype)
         if h == small1.shape[1]:
             img[y:y + h, x:x + w, :] = np.fliplr(small1.swapaxes(0, 1))
@@ -160,25 +151,49 @@ def rand_pos(sess, smalls, bg_file, width, height, w1, h1, num):
 
 
 def augment(bg_file, width, height, w1, h1, num_pieces, num_imgs, image_dir, prefix, annos_dir, cats_json):
-    sess = tf.Session()
-
     cats, _ = load_cats(cats_json)
     next_image_id = get_max_image_id(prefix, annos_dir) + 1
 
     tfrecords_filename = os.path.join(cfg.dat_dir, 'small.tfrecords')
     smalls = load_record(tfrecords_filename)
+
+    bg_img = np.array(Image.open(bg_file).convert('RGB'))
+    bg_img = np.asanyarray(img_as_float(bg_img), np.float32)
+
+    sess = tf.Session()
+
+    img_pl = tf.placeholder(tf.uint8, [None, None, 3], name='u8_img')
+    img_op = tf.image.convert_image_dtype(img_pl, tf.float32)
     tmp = []
     for img, catid in smalls:
-        img_op = tf.image.convert_image_dtype(img, tf.float32)
-        img = sess.run(img_op)
+        img = sess.run(img_op, feed_dict={img_pl: img})
         tmp.append((img, catid))
     smalls = tmp
+
+    sample_distorted_bounding_box = tf.image.sample_distorted_bounding_box(
+        [w1, h1, 3],
+        bounding_boxes=[[[0, 0., 1, 1]]],
+        min_object_covered=0.1,
+        aspect_ratio_range=[0.75, 1.33],
+        area_range=[0.75, .9],
+        max_attempts=100,
+        use_image_if_no_bounding_boxes=True)
+
+    img_float_pl = tf.placeholder(tf.float32, shape=[None, None, 3], name='fp_img')
+    out_size_pl = tf.placeholder(tf.int32, shape=[2], name='out_size')
+    times_rot90_pl = tf.placeholder(tf.int32, shape=[], name='times_rot90')
+    distort_op = distort_image(img_float_pl, out_size_pl, [[[0, 0., 1, 1]]], times_rot90=times_rot90_pl)
+    bg_rand_op = distort_color(img_float_pl, scope='bg_rand_color')
+
+    writer = tf.summary.FileWriter('../logs', graph=sess.graph)
 
     begin = time.time()
     costs = []
     for i in range(num_imgs):
         t1 = time.time()
-        img, bbs = rand_pos(sess, smalls, bg_file, width, height, w1, h1, num_pieces)
+        img, bbs = rand_pos(sess, sample_distorted_bounding_box, bg_rand_op,
+                            distort_op, img_float_pl, out_size_pl, times_rot90_pl,
+                            smalls, bg_img, width, height, w1, h1, num_pieces)
         t2 = time.time()
         new_file_name = '%s_%05d' % (prefix, next_image_id)
         img = Image.fromarray(img_as_ubyte(img))
@@ -189,12 +204,13 @@ def augment(bg_file, width, height, w1, h1, num_pieces, num_imgs, image_dir, pre
         next_image_id += 1
         costs.append((t2-t1, t3-t2))
         if i % 100 == 0:
-            print(i, costs[-1][0] + costs[-1][0] - costs[0][0] - costs[0][0])
+            print('%-5d: %.3f' % (i, sum(map(sum, zip(*costs))) / len(costs)))
 
     costs = np.array(costs)
     costs_avg = costs.mean(axis=0)
     total = time.time() - begin
-    print('time cost(s): all(%f), avg(%f), gen_avg(%f), save_avg(%f)' % (total, total / num_imgs, costs_avg[0], costs_avg[1]))
+    print('time cost(s): all(%.3f), avg(%.3f), gen_avg(%.3f), save_avg(%.3f)' % (total, total / num_imgs, costs_avg[0], costs_avg[1]))
+    writer.close()
     sess.close()
 
 
@@ -226,7 +242,8 @@ def gen(bg_file):
 #    image_rop = tf.image.random_contrast(image, 0.1, 0.9)
 #    image_rop = tf.image.random_saturation(image, 0.1, 0.9)
 #    image_rop = tf.image.per_image_standardization(image)
-    image_rop = distort_image(image, 600, 800, tf.constant([[[1 / 6, 1 / 9, 2 / 6, 2 / 9],
+
+    image_rop = distort_image(image, (600, 800), tf.constant([[[1 / 6, 1 / 9, 2 / 6, 2 / 9],
                                                              [2 / 6, 4 / 9, 3 / 6, 5 / 9],
                                                              [3 / 6, 5 / 9, 4 / 6, 6 / 9]]]))
     summaries = tf.get_collection(tf.GraphKeys.SUMMARIES)
@@ -292,7 +309,7 @@ def distort_color(image, thread_id=0, scope=None):
     image = tf.clip_by_value(image, 0.0, 1.0)
     return image
 
-def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_rotate=0):
+def distort_image(image, size, bbox, thread_id=0, scope=None, times_rot90=0):
   """Distort one image for training a network.
   Distorting images provides a useful technique for augmenting the data
   set during training in order to make the network invariant to aspects
@@ -309,7 +326,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_ro
   Returns:
     3-D float Tensor of distorted image used for training.
   """
-  with tf.name_scope(values=[image, height, width, bbox], name=scope,
+  with tf.name_scope(values=[image, size, bbox, times_rot90], name=scope,
                      default_name='distort_image'):
     # Each bounding box has shape [1, num_boxes, box coords] and
     # the coordinates are ordered [ymin, xmin, ymax, xmax].
@@ -348,10 +365,10 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_ro
     # fashion based on the thread number.
     # Note that ResizeMethod contains 4 enumerated resizing methods.
     resize_method = thread_id % 4
-    distorted_image = tf.image.resize_images(distorted_image, [height, width],
+    distorted_image = tf.image.resize_images(distorted_image, size,
                                              method=resize_method)
 
-    distorted_image.set_shape([height, width, 3])
+#     distorted_image.set_shape([height, width, 3])
     if not thread_id:
       tf.summary.image('cropped_resized_image',
                        tf.expand_dims(distorted_image, 0))
@@ -364,7 +381,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None, degree_ro
       tf.summary.image('final_distorted_image',
                        tf.expand_dims(distorted_image, 0))
 
-    distorted_image = tf.image.rot90(distorted_image, k=degree_rotate)
+    distorted_image = tf.image.rot90(distorted_image, k=times_rot90)
 
     return distorted_image
 
@@ -380,9 +397,8 @@ if __name__ == '__main__':
 #                 cats_dirs,
 #                 os.path.join(cfg.dat_dir, 'small.tfrecords'))
 #     images = load_record(os.path.join(cfg.dat_dir, 'small.tfrecords'))
-#     rand_pos(bg_file, 1024, 1024, 128, 128, 14)
 
-    augment(bg_file, 1024, 1024, 128, 128, 14, 7200,
+    augment(bg_file, 1024, 1024, 128, 128, 14, 10,
             cfg.dat_dir + 'mj/ds_gen/images',
             'generated',
             cfg.dat_dir + 'mj/ds_gen/annotations',
