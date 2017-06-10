@@ -200,5 +200,6 @@ if __name__ == '__main__':
 #                                 ds + 'cats.json',
 #                                 'qqmj',
 #                                 ds + 'anno_pascal')
+#     check_a_file(ds + 'ds_mj/annotations/generated_03233.xml', ds)
 
     print('time cost(s):', time.time() - begin)

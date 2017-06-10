@@ -28,8 +28,10 @@ cfg.DATA_DIR = '../dataset'
 # cfg.ANCHOR_RATIOS = [0.75, 1, 1.33]
 # cfg.ANCHOR_SCALES = [2,7,12]
 # cfg.ANCHOR_RATIOS = [0.5, 1, 2]
-cfg.ANCHOR_SCALES = [6, 12, 18]
-cfg.ANCHOR_RATIOS = [0.67, 0.83, 1.2, 1.5]
+# cfg.ANCHOR_SCALES = [6, 12, 18]
+# cfg.ANCHOR_RATIOS = [0.67, 0.83, 1.2, 1.5]
+cfg.ANCHOR_SCALES = [2.2, 4.2, 7.0, 7.6]
+cfg.ANCHOR_RATIOS = [0.75, 0.83, 1.18, 1.33]
 
 
 cats = load_json(os.path.join(cfg.DATA_DIR, 'cats.json'))
@@ -39,7 +41,7 @@ CLASSES = tuple(['__background__'] + CLASSES)
 print('number of classes:', len(CLASSES))
 print(cats)
 
-NETS = {'vgg16': ('vgg16_faster_rcnn_iter_10000.ckpt',), 'res101': ('res101_faster_rcnn_iter_110000.ckpt',)}
+NETS = {'vgg16': ('vgg16_faster_rcnn_iter_20000.ckpt',), 'res101': ('res101_faster_rcnn_iter_110000.ckpt',)}
 DATASETS = {'mahjong': ('mj_train',)}
 
 
@@ -109,7 +111,7 @@ def vis_detections_all(im, dets, idx_cls, thresh=0.5):
             plt.Rectangle((bbox[0], bbox[1]),
                           bbox[2] - bbox[0],
                           bbox[3] - bbox[1], fill=False,
-                          edgecolor=cmap(i % COLOR_N), linewidth=3., alpha=0.4)
+                          edgecolor=cmap(i % COLOR_N), linewidth=3., alpha=0.5)
             )
         ax.text(bbox[0] + 3, (bbox[3] + bbox[1]) / 2,
                 '{:s}'.format(class_name),
@@ -131,6 +133,7 @@ def demo(sess, net, image_name):
     # Load the demo image
     im_file = os.path.join(cfg.DATA_DIR, image_name)
     im = cv2.imread(im_file)
+    print('bg img', im.shape)
 
     # Detect all object classes and regress object bounds
     timer = Timer()
@@ -143,7 +146,7 @@ def demo(sess, net, image_name):
     C = scores.shape[1] - 1  # num of real classes
 
     # Visualize detections for each class
-    CONF_THRESH = 0.5
+    CONF_THRESH = 0.8
     NMS_THRESH = 0.3
     all_boxes_scores = np.zeros((N * C, 5), dtype=np.float32)
 
@@ -159,16 +162,16 @@ def demo(sess, net, image_name):
         all_boxes_scores[N * (cls_ind - 1):N * cls_ind, :4] = cls_boxes
         all_boxes_scores[N * (cls_ind - 1):N * cls_ind, 4] = cls_scores
 
-        keep = nms(dets, NMS_THRESH)
-        dets = dets[keep, :]
-        print('for class %d(%s) remain %d bboxes' % (cls_ind, cls, len(keep)))
-        vis_detections(im, cls, dets, thresh=CONF_THRESH)
+#         keep = nms(dets, NMS_THRESH)
+#         dets = dets[keep, :]
+#         print('for class %d(%s) remain %d bboxes' % (cls_ind, cls, len(keep)))
+#         vis_detections(im, cls, dets, thresh=CONF_THRESH)
 
-#     keep = nms(all_boxes_scores, NMS_THRESH)
-#     dets = all_boxes_scores[keep, :]
-#     idx_cls = [i // N + 1 for i in keep]
-#     print('for class %d(%s) remain %d bboxes, total %d proposals'%(cls_ind, cls, len(dets), len(all_boxes_scores)))
-#     vis_detections_all(im, dets, idx_cls, thresh=CONF_THRESH)
+    keep = nms(all_boxes_scores, NMS_THRESH)
+    dets = all_boxes_scores[keep, :]
+    idx_cls = [i // N + 1 for i in keep]
+    print('for class %d(%s) remain %d bboxes, total %d proposals'%(cls_ind, cls, len(dets), len(all_boxes_scores)))
+    vis_detections_all(im, dets, idx_cls, thresh=CONF_THRESH)
 
 
 def parse_args():
@@ -209,21 +212,23 @@ if __name__ == '__main__':
         net = Resnet101(batch_size=1)
     else:
         raise NotImplementedError
+
     net.create_architecture(sess, "TEST", len(CLASSES),
-                          tag='default', anchor_scales=[6, 12, 18], anchor_ratios=[0.67, 0.83, 1.2, 1.5])
+                          tag='default', anchor_scales=cfg.ANCHOR_SCALES, anchor_ratios=cfg.ANCHOR_RATIOS)
     saver = tf.train.Saver()
     saver.restore(sess, tfmodel)
 
     print('Loaded network {:s}'.format(tfmodel))
 
 #     im_names = ['mj/tianfeng/2.png']
-#     im_names = ['mj/test_var/1_8.png']
-#     im_names = ['mj/mjatlas_uni.png']
-#     im_names = ['mj/mj_qqhl/qqmj_00001.png']
-    im_names = ['tube/aa.png']
-#     im_names = ['tube/mjscreen_373.png', 'tube/mjscreen_663.png', 'tube/mjscreen_385.png']
+    im_names = ['mj/test_var/1_8.png']
+#     im_names = ['mj/mjatlas_tianfeng.png', 'mj/mjatlas_uni.png', 'mj/mjatlas.png']
+    im_names = ['mj/mj_qqhl/qqmj_00001.png']
+#     im_names = ['ds_mj/images/generated_03588.png', 'ds_mj/images/generated_06738.png']
 #     im_names = ['tube/1.jpg', 'tube/2.jpg', 'tube/3.jpg']
 #     im_names = ['mj/mj_own_qqhl/mjscreen_100971.png']
+#     im_names = ['mj/mj_own_tianfeng/mjscreen_17568.png']
+
 
     for im_name in im_names:
         print('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
