@@ -385,6 +385,25 @@ def distort_image(image, size, bbox, thread_id=0, scope=None, times_rot90=0):
 
     return distorted_image
 
+def cats_to_pbtxt(cats_json, pbtxt):
+    cats, _ = load_cats(cats_json)
+    cats[0] = 'none_of_the_above'  #insert bg category
+
+    import sys
+    sys.path.append('/home/splendor/win/learn/models/object_detection/protos')
+
+    import string_int_label_map_pb2
+
+    labels = string_int_label_map_pb2.StringIntLabelMap()
+    for k, v in cats.items():
+        label = labels.item.add()
+        label.id = k
+        label.name = v
+
+#     print(labels)
+    with open(pbtxt, 'w') as f:
+        f.write(str(labels))
+
 
 if __name__ == '__main__':
     cfg.dat_dir = '/home/splendor/win/mira/dataset/'
@@ -398,8 +417,10 @@ if __name__ == '__main__':
 #                 os.path.join(cfg.dat_dir, 'small.tfrecords'))
 #     images = load_record(os.path.join(cfg.dat_dir, 'small.tfrecords'))
 
-    augment(bg_file, 1024, 1024, 128, 128, 14, 10,
-            cfg.dat_dir + 'mj/ds_gen/images',
-            'generated',
-            cfg.dat_dir + 'mj/ds_gen/annotations',
-            cfg.dat_dir + 'cats.json')
+#     augment(bg_file, 1024, 1024, 128, 128, 14, 10,
+#             cfg.dat_dir + 'mj/ds_gen/images',
+#             'generated',
+#             cfg.dat_dir + 'mj/ds_gen/annotations',
+#             cfg.dat_dir + 'cats.json')
+
+    cats_to_pbtxt(os.path.join(cfg.dat_dir, 'cats.json'), os.path.join(cfg.dat_dir, 'cats.pbtxt'))
