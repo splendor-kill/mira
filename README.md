@@ -15,12 +15,12 @@ the smart, moderate monkey let mice lie in their test bed
 
 ### 2. 数据收集
 数据来自于几个方面：  
-* 1. QQ麻将，天凤麻将[^8]  
-使用Sikuli[^9]脚本得到了一批截图，因为界面大小相对较固定，  
+* 1.QQ麻将，[天凤][^8]麻将  
+使用[Sikuli][^9]脚本得到了一批截图，因为界面大小相对较固定，  
 所以可用程序分割图像，然后用openCV识别标注。  
-* 2. 自己用Unity写的麻将程序  
+* 2.自己用Unity写的麻将程序  
 因为程序完全受控，所以比较方便，只需要换贴图就可以。  
-* 3. 程序生成  
+* 3.程序生成  
 通过改变缩放，旋转，摆放位置，不同光照条件生成。  
 
 **数据集格式PACAL VOC和tfrecord**
@@ -28,7 +28,7 @@ the smart, moderate monkey let mice lie in their test bed
 
 ### 3. 训练
 识别代码来自于项目[tf-faster-rcnn][^6]和[tensorflow object detection][^5]。  
-它们都支持各种网络结构，如vgg-net[^10]， res-net[^11]等。
+它们都支持各种网络结构，如[vgg-net][^10]， [res-net][^11]等。
 
 
 ### 4. 效果
@@ -43,12 +43,11 @@ the smart, moderate monkey let mice lie in their test bed
 
 
 ### 5. 下一步想做的
-* 1.试验下yolo[^12]，主要因为faster-rcnn[^6]还是不够快
+* 1.试验下[yolo][^12]，主要因为[faster-rcnn][^6]还是不够快
 * 2.透视矫正
 * 3.测试在现实情况下的识别效果
 
 
-### 6. 参考
 [^5]: https://github.com/tensorflow/models/tree/master/object_detection
 [^6]: https://github.com/endernewton/tf-faster-rcnn
 [^8]: http://tenhou.net/
