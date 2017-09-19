@@ -42,7 +42,7 @@ the smart, moderate monkey let mice lie in their test bed
 - 4.有的情况下会有半透明的overlay层，对算法影响较大
 
 
-### 5. 下一步想做的
+### 6. 下一步想做的
 * 1.试验下[yolo][^12]，主要因为[faster-rcnn][^6]还是不够快
 * 2.透视矫正
 * 3.测试在现实情况下的识别效果
