@@ -13,7 +13,7 @@ import matplotlib.colors as colors
 import _init_paths
 from utils.timer import Timer
 from model.config import cfg
-from model.test_vgg16 import im_detect
+from model.test_vgg16 import im_detect, im_detect2
 from model.nms_wrapper import nms
 from nets.vgg16 import vgg16
 from nets.res101 import Resnet101
@@ -41,7 +41,7 @@ CLASSES = tuple(['__background__'] + CLASSES)
 print('number of classes:', len(CLASSES))
 print(cats)
 
-NETS = {'vgg16': ('vgg16_faster_rcnn_iter_20000.ckpt',), 'res101': ('res101_faster_rcnn_iter_110000.ckpt',)}
+NETS = {'vgg16': ('vgg16_faster_rcnn_iter_15000.ckpt',), 'res101': ('res101_faster_rcnn_iter_10000.ckpt',)}
 DATASETS = {'mahjong': ('mj_train',)}
 
 
@@ -170,8 +170,26 @@ def demo(sess, net, image_name):
     keep = nms(all_boxes_scores, NMS_THRESH)
     dets = all_boxes_scores[keep, :]
     idx_cls = [i // N + 1 for i in keep]
-    print('for class %d(%s) remain %d bboxes, total %d proposals'%(cls_ind, cls, len(dets), len(all_boxes_scores)))
+    print('it remains %d bboxes, total %d proposals' % (len(dets), len(all_boxes_scores)))
     vis_detections_all(im, dets, idx_cls, thresh=CONF_THRESH)
+
+
+def demo2(sess, net, image_name):
+    im_file = os.path.join(cfg.DATA_DIR, image_name)
+    im = cv2.imread(im_file)
+    print('bg img', im.shape)
+
+    timer = Timer()
+    timer.tic()
+    probs, boxes, idx_cls = im_detect2(sess, net, im)
+    timer.toc()
+    print('Detection took {:.3f}s for {:d} object proposals'.format(timer.total_time, boxes.shape[0]))
+
+#     N = scores.shape[0]  # num of proposals
+#     C = scores.shape[1] - 1  # num of real classes
+    NMS_THRESH = 0.3
+    CONF_THRESH = 0.8
+    vis_detections_all(im, boxes, idx_cls, thresh=CONF_THRESH)
 
 
 def parse_args():
@@ -221,9 +239,10 @@ if __name__ == '__main__':
     print('Loaded network {:s}'.format(tfmodel))
 
 #     im_names = ['mj/tianfeng/2.png']
-    im_names = ['mj/test_var/1_8.png']
+#     im_names = ['mj/test_var/1_8.png']
 #     im_names = ['mj/mjatlas_tianfeng.png', 'mj/mjatlas_uni.png', 'mj/mjatlas.png']
-    im_names = ['mj/mj_qqhl/qqmj_00001.png']
+#     im_names = ['mj/mj_qqhl/qqmj_00001.png']
+    im_names = ['mj/bigpics_test/qqmj_real_1.png']
 #     im_names = ['ds_mj/images/generated_03588.png', 'ds_mj/images/generated_06738.png']
 #     im_names = ['tube/1.jpg', 'tube/2.jpg', 'tube/3.jpg']
 #     im_names = ['mj/mj_own_qqhl/mjscreen_100971.png']

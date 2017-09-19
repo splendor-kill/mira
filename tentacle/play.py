@@ -407,11 +407,11 @@ if __name__ == '__main__':
     cfg.data_dir = '/home/splendor/win/mira/dataset/'
     # big_dir = os.path.join(cfg.data_dir, 'bigpics')
     big_dir = '/home/splendor/jumbo/annlab/mj/bigpics_'
-#     template = cv2.imread(os.path.join(cfg.data_dir, 'atomitems/b4.png'), 0)
-    # browse(big_dir, template)
-    # browse2(big_dir, template)
+    template = cv2.imread(os.path.join(cfg.data_dir, 'atomitems/b4.png'), 0)
+#     browse(big_dir, template)
+#     browse2(big_dir, template)
     # test_hist(os.path.join(cfg.data_dir, 'bigpics'))
-    test_feature_match(big_dir, cfg.data_dir + 'images.json', cfg.data_dir + 'annotations.json')
+#     test_feature_match(big_dir, cfg.data_dir + 'images.json', cfg.data_dir + 'annotations.json')
 #     verify_annotation(cfg.data_dir)
     # hands = get_pieces('/home/splendor/win/mira/dataset/bigpics/sikuliximage-1493200895127.png')
     # same = np.allclose(hands[4], hands[5])

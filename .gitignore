@@ -7,3 +7,6 @@ summary/
 output/
 logs/
 output
+.settings/
+README.html*
+tf_od_api/
